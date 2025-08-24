@@ -1,0 +1,28 @@
+backbone: densenet121
+batch_size: 16
+epochs: 10
+learning_rate: 0.0001
+constraint_iterations: 20
+projection_mode: integrated
+
+# Training settings
+warmup_epochs: 2
+scheduler: cosine
+weight_decay: 1e-5
+gradient_clip: 1.0
+
+# Loss weights
+constraint_weight: 1.0
+consistency_weight: 0.5
+
+# Evaluation
+eval_every: 1
+save_every: 5
+
+# Logging
+wandb:
+  project: "causal-xray-loss"
+  entity: "your-wandb-entity"  # Replace with your wandb entity/username
+  api_key: "your-wandb-api-key"  # Replace with your actual wandb API key
+  tags: ["chestxray14", "constraint-projection"]
+  notes: "Constraint-projected chest X-ray classification"

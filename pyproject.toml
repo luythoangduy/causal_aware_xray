@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "causal-xray-loss"
+version = "0.1.0"
+description = "Constraint-projected chest X-ray classification (ChestX-ray14) with Dykstra algorithm"
+authors = [ { name="Your Name" } ]
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "torch>=2.1",
+    "torchvision>=0.16",
+    "scikit-learn>=1.3",
+    "pandas>=2.0",
+    "numpy>=1.24",
+    "torchxrayvision>=1.2.4",
+    "tqdm",
+    "pyyaml",
+    "wandb",
+    "matplotlib",
+    "seaborn"
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "black", "ruff"]
+
+[tool.setuptools.packages.find]
+where=["src"]
+
+[tool.black]
+line-length=100
+
+[tool.ruff]
+line-length=100
