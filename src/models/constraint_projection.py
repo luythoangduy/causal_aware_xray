@@ -50,18 +50,18 @@ class ConstraintProjection(nn.Module):
         prev = probs
         for _ in range(self.max_iter):
             if self.imp_i.numel():
-                qi = probs[:, self.imp_i]
-                qj = probs[:, self.imp_j]
-                tau = self.imp_tau.view(1, -1)
+                qi = probs[:, self.imp_i.to(probs.device)]
+                qj = probs[:, self.imp_j.to(probs.device)]
+                tau = self.imp_tau.to(probs.device).view(1, -1)
                 violation = (qi + tau) - qj
                 if violation.any():
                     adj = torch.clamp(violation, min=0)
                     qj_new = torch.clamp(qj + adj, 0.0, 1.0)
-                    probs = probs.scatter(1, self.imp_j.expand(probs.size(0), -1), qj_new)
+                    probs = probs.scatter(1, self.imp_j.to(probs.device).expand(probs.size(0), -1), qj_new)
             if self.exc_i.numel():
-                qi = probs[:, self.exc_i]
-                qj = probs[:, self.exc_j]
-                kappa = self.exc_kappa.view(1, -1)
+                qi = probs[:, self.exc_i.to(probs.device)]
+                qj = probs[:, self.exc_j.to(probs.device)]
+                kappa = self.exc_kappa.to(probs.device).view(1, -1)
                 sum_ij = qi + qj
                 violation = sum_ij - kappa
                 if violation.any():
@@ -69,8 +69,8 @@ class ConstraintProjection(nn.Module):
                     red = over / 2.0
                     qi_new = torch.clamp(qi - red, 0.0, 1.0)
                     qj_new = torch.clamp(qj - red, 0.0, 1.0)
-                    probs = probs.scatter(1, self.exc_i.expand(probs.size(0), -1), qi_new)
-                    probs = probs.scatter(1, self.exc_j.expand(probs.size(0), -1), qj_new)
+                    probs = probs.scatter(1, self.exc_i.to(probs.device).expand(probs.size(0), -1), qi_new)
+                    probs = probs.scatter(1, self.exc_j.to(probs.device).expand(probs.size(0), -1), qj_new)
             if (probs - prev).abs().max() < self.eps:
                 break
             prev = probs
@@ -79,16 +79,16 @@ class ConstraintProjection(nn.Module):
     def constraint_violations(self, probs: Tensor) -> dict:
         out = {}
         if self.imp_i.numel():
-            qi = probs[:, self.imp_i]
-            qj = probs[:, self.imp_j]
-            tau = self.imp_tau.view(1, -1)
+            qi = probs[:, self.imp_i.to(probs.device)]
+            qj = probs[:, self.imp_j.to(probs.device)]
+            tau = self.imp_tau.to(probs.device).view(1, -1)
             imp_v = torch.clamp((qi + tau) - qj, min=0)
             out['implication_total'] = imp_v.sum().item()
             out['implication_mean'] = imp_v.mean().item()
         if self.exc_i.numel():
-            qi = probs[:, self.exc_i]
-            qj = probs[:, self.exc_j]
-            kappa = self.exc_kappa.view(1, -1)
+            qi = probs[:, self.exc_i.to(probs.device)]
+            qj = probs[:, self.exc_j.to(probs.device)]
+            kappa = self.exc_kappa.to(probs.device).view(1, -1)
             exc_v = torch.clamp((qi + qj) - kappa, min=0)
             out['exclusion_total'] = exc_v.sum().item()
             out['exclusion_mean'] = exc_v.mean().item()

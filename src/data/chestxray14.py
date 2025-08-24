@@ -27,7 +27,7 @@ class ChestXRay14Dataset(Dataset):
         data_dir: str,
         split: str = 'train',
         image_size: int = 224,
-        normalization: str = 'chest_xray',
+        normalization: str = 'torchxrayvision',
         data_augmentation: bool = True,
         include_no_finding: bool = False,
     ):
@@ -73,6 +73,11 @@ class ChestXRay14Dataset(Dataset):
             mean = [0.485, 0.456, 0.406]
             std = [0.229, 0.224, 0.225]
             self.rgb_mode = True
+        elif normalization == 'torchxrayvision':
+            # TorchXRayVision expects [-1024, 1024] range (Hounsfield units)
+            mean = [0.5]
+            std = [1.0/2048.0]  # Scale [0,1] to [-1024, 1024]
+            self.rgb_mode = False
         else:
             mean = [0.502]
             std = [0.289]
