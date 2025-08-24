@@ -293,7 +293,7 @@ def main():
     constraint_layer = build_constraint_layer(train_ds.pathologies, cfg)
     model = ConstrainedChestXRayClassifier(
         backbone=cfg.get('backbone', 'densenet121'),
-        pretrained=True,
+        pretrained=False,
         num_classes=len(train_ds.pathologies),
         constraint_projection=constraint_layer,
         projection_mode=cfg.get('projection_mode', 'integrated')
