@@ -117,18 +117,18 @@ def train_epoch(model, loss_fn, loader, optimizer, scheduler, device, epoch, log
         imgs = batch['img'].to(device)
         labs = batch['lab'].to(device)
         
-        # Forward pass
+        # Forward pass - get raw logits
         raw_logits = model(imgs, apply_constraints=False)
         
-        # Get constraint statistics
+        # Calculate constraint violations on RAW probabilities (before projection)
         with torch.no_grad():
             raw_probs = torch.sigmoid(raw_logits)
             constraint_stats = model.constraint_projection.constraint_violations(raw_probs) if model.constraint_projection else {}
         
-        # Get constrained predictions
+        # Get constrained predictions (apply projection)
         constrained_probs = model.project(raw_logits)
         
-        # Compute loss
+        # Compute loss using pre-projection constraint stats
         losses = loss_fn(constrained_probs, raw_logits, labs, constraint_stats)
         
         # Backward pass
@@ -152,9 +152,16 @@ def train_epoch(model, loss_fn, loader, optimizer, scheduler, device, epoch, log
             'train/lr': optimizer.param_groups[0]['lr'],
         }
         
-        # Add constraint violations
+        # Add constraint violations (both pre and post projection for monitoring)
         for k, v in constraint_stats.items():
-            step_metrics[f'train/constraint_{k}'] = v
+            step_metrics[f'train/constraint_pre_{k}'] = v
+            
+        # Optionally add post-projection violations for comparison
+        if model.constraint_projection:
+            with torch.no_grad():
+                post_stats = model.constraint_projection.constraint_violations(constrained_probs)
+                for k, v in post_stats.items():
+                    step_metrics[f'train/constraint_post_{k}'] = v
         
         step_logs.append(step_metrics)
         
@@ -165,6 +172,7 @@ def train_epoch(model, loss_fn, loader, optimizer, scheduler, device, epoch, log
         # Update progress bar
         pbar.set_postfix({
             'loss': f"{losses['loss'].item():.4f}",
+            'constraint': f"{losses['constraint_penalty'].item():.4f}",
             'lr': f"{optimizer.param_groups[0]['lr']:.2e}"
         })
         
