@@ -68,36 +68,19 @@ class ChestXRay14Dataset(Dataset):
         # Build image directory mapping for efficient lookup
         self._build_image_mapping()
 
-        # Transforms
-        if normalization == 'imagenet':
-            mean = [0.485, 0.456, 0.406]
-            std = [0.229, 0.224, 0.225]
-            self.rgb_mode = True
-        elif normalization == 'torchxrayvision':
-            # TorchXRayVision expects [-1024, 1024] range (Hounsfield units)
-            mean = [0.5]
-            std = [1.0/2048.0]  # Scale [0,1] to [-1024, 1024]
-            self.rgb_mode = False
-        else:
-            mean = [0.502]
-            std = [0.289]
-            self.rgb_mode = False
-
-        train_tfms = [transforms.Resize((image_size, image_size))]
-        if data_augmentation:
-            train_tfms += [
-                transforms.RandomRotation(10),
-                transforms.RandomAffine(degrees=0, translate=(0.1, 0.1)),
-                transforms.RandomHorizontalFlip(),
-                transforms.ColorJitter(brightness=0.2, contrast=0.2),
-            ]
-        train_tfms += [transforms.ToTensor(), transforms.Normalize(mean=mean, std=std)]
-        eval_tfms = [
-            transforms.Resize((image_size, image_size)),
+        # Use ImageNet normalization for grayscale (convert to 3-channel)
+        self.normalize = transforms.Normalize([0.485, 0.456, 0.406],
+                                            [0.229, 0.224, 0.225])
+        
+        # Simple transforms: resize to grayscale, convert to RGB, CenterCrop
+        self.transform = transforms.Compose([
+            transforms.Resize(256),
+            transforms.CenterCrop(224),
             transforms.ToTensor(),
-            transforms.Normalize(mean=mean, std=std),
-        ]
-        self.transform = transforms.Compose(train_tfms if split == 'train' else eval_tfms)
+        ])
+        
+        # Always use RGB mode for ImageNet normalization
+        self.rgb_mode = True
 
     def _build_image_mapping(self):
         """Build mapping from image names to their full paths for efficient lookup."""
@@ -140,11 +123,13 @@ class ChestXRay14Dataset(Dataset):
         
         img_path = self.image_paths[img_name]
         img = Image.open(img_path)
-        # Convert based on normalization mode
-        if self.rgb_mode:
-            img = img.convert('RGB')
-        else:
-            img = img.convert('L')  # Grayscale for TorchXRayVision
-        img = self.transform(img)
+        # Convert grayscale to RGB for ImageNet normalization
+        img = img.convert('RGB')
+        
+        # Apply transforms (resize + CenterCrop + ToTensor)
+        img = self.transform(img)  # Returns tensor: (3, 224, 224)
+        
+        # Apply normalization
+        img = self.normalize(img)
         label = self.labels[idx]
         return {"img": img, "lab": label, "idx": idx}

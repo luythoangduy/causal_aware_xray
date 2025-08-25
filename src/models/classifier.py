@@ -3,6 +3,7 @@ import torch
 from torch import nn, Tensor
 from typing import Optional
 import torchxrayvision as xrv
+import torchvision
 from .constraint_projection import ConstraintProjection
 
 
@@ -30,7 +31,7 @@ class ConstrainedChestXRayClassifier(nn.Module):
             if pretrained:
                 self.backbone = xrv.models.DenseNet(weights="densenet121-res224-nih")
             else:
-                self.backbone = xrv.models.DenseNet(weights=None)
+                self.backbone = torchvision.models.densenet121(pretrained=True)
         else:
             raise ValueError(f"Unsupported backbone: {backbone}")
 
