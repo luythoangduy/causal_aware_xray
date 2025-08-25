@@ -22,39 +22,39 @@ from src.evaluation.metrics import compute_all_metrics
 MEDICAL_CONSTRAINTS = {
     'implications': [
         # Pneumonia and respiratory pathology hierarchy
-        ('Pneumonia', 'Infiltration', 0.0),           # Pneumonia always causes infiltration
-        ('Consolidation', 'Infiltration', 0.0),       # Consolidation is type of infiltration
-        ('Mass', 'Nodule', 0.0),                      # Mass is large nodule (>3cm)
+        ('Pneumonia', 'Infiltration'),                # Pneumonia always causes infiltration
+        ('Consolidation', 'Infiltration'),            # Consolidation is type of infiltration
+        ('Mass', 'Nodule'),                          # Mass is large nodule (>3cm)
         
         # Cardiac-pulmonary relationships
-        ('Cardiomegaly', 'Edema', -0.1),              # Enlarged heart often causes pulmonary edema
-        ('Pneumonia', 'Effusion', -0.2),              # Pneumonia can cause pleural effusion
+        ('Cardiomegaly', 'Edema'),                   # Enlarged heart often causes pulmonary edema
+        ('Pneumonia', 'Effusion'),                   # Pneumonia can cause pleural effusion
         
         # Atelectasis relationships
-        ('Atelectasis', 'Infiltration', -0.1),        # Atelectasis can appear as infiltration
+        ('Atelectasis', 'Infiltration'),             # Atelectasis can appear as infiltration
         
         # Support relationships
-        ('Fibrosis', 'Infiltration', -0.1),           # Fibrosis shows as infiltrative pattern
+        ('Fibrosis', 'Infiltration'),                # Fibrosis shows as infiltrative pattern
     ],
     
     'exclusions': [
-        # Strong anatomical exclusions (κ > 1.0)
-        ('Pneumothorax', 'Effusion', 1.4),            # Cannot have air and fluid in pleural space
-        ('Pneumothorax', 'Consolidation', 1.2),       # Air prevents consolidation
-        ('Emphysema', 'Fibrosis', 1.1),               # Opposite pathophysiology
+        # Strong anatomical exclusions (κ < 0.5)
+        ('Pneumothorax', 'Effusion', 0.3),          # Cannot have air and fluid in pleural space
+        ('Pneumothorax', 'Consolidation', 0.2),     # Air prevents consolidation
+        ('Emphysema', 'Fibrosis', 0.1),             # Opposite pathophysiology
         
-        # Moderate exclusions (κ ≈ 1.0)
-        ('Atelectasis', 'Emphysema', 1.0),            # Collapse vs hyperinflation
-        ('Hernia', 'Pneumothorax', 1.0),              # Different anatomical regions
-        ('Pneumothorax', 'Edema', 0.95),              # Air vs fluid pathology
+        # Moderate exclusions (κ ≈ 0.5-0.8)
+        ('Atelectasis', 'Emphysema', 0.5),          # Collapse vs hyperinflation
+        ('Hernia', 'Pneumothorax', 0.5),            # Different anatomical regions
+        ('Pneumothorax', 'Edema', 0.5),             # Air vs fluid pathology
         
-        # Mild exclusions (κ < 1.0) - can co-occur but unusual
-        ('Mass', 'Pneumonia', 0.8),                   # Neoplasm vs infection
-        ('Nodule', 'Pneumonia', 0.75),                # Chronic vs acute findings
-        ('Fibrosis', 'Consolidation', 0.7),           # Chronic vs acute
-        ('Emphysema', 'Consolidation', 0.7),          # Hyperinflation vs consolidation
-        ('Mass', 'Edema', 0.65),                      # Focal vs diffuse pathology
-        ('Hernia', 'Cardiomegaly', 0.6),              # Different causes
+        # Mild exclusions (κ > 0.8) - can co-occur but unusual
+        ('Mass', 'Pneumonia', 0.8),                 # Neoplasm vs infection
+        ('Nodule', 'Pneumonia', 0.75),              # Chronic vs acute findings
+        ('Fibrosis', 'Consolidation', 0.7),         # Chronic vs acute
+        ('Emphysema', 'Consolidation', 0.7),        # Hyperinflation vs consolidation
+        ('Mass', 'Edema', 0.65),                    # Focal vs diffuse pathology
+        ('Hernia', 'Cardiomegaly', 0.6),            # Different causes
     ],
 }
 
@@ -99,13 +99,24 @@ def setup_wandb(cfg, args):
 
 
 def build_constraint_layer(pathologies, cfg):
-    """Build constraint projection layer."""
+    """Build constraint projection layer with correct mathematical formulation."""
     label_to_idx = {p: i for i, p in enumerate(pathologies)}
-    implications = [(label_to_idx[a], label_to_idx[b], tau) for a, b, tau in MEDICAL_CONSTRAINTS['implications']]
+    
+    # Build implications: P(i) ≤ P(j) (no tau parameter)
+    implications = [(label_to_idx[a], label_to_idx[b]) for a, b in MEDICAL_CONSTRAINTS['implications']]
+    
+    # Build exclusions: P(i) + P(j) ≤ κ
     exclusions = [(label_to_idx[a], label_to_idx[b], kappa) for a, b, kappa in MEDICAL_CONSTRAINTS['exclusions']]
     
-    max_iter = cfg.get('constraint_iterations', 20)
-    return ConstraintProjection(implications=implications, exclusions=exclusions, max_iter=max_iter)
+    max_iter = cfg.get('constraint_iterations', 100)
+    tol = cfg.get('constraint_tolerance', 1e-6)
+    
+    return ConstraintProjection(
+        implications=implications, 
+        exclusions=exclusions, 
+        max_iter=max_iter,
+        tol=tol
+    )
 
 
 def create_scheduler(optimizer, cfg, total_steps):
@@ -129,7 +140,7 @@ def create_scheduler(optimizer, cfg, total_steps):
 
 
 def train_epoch(model, loss_fn, loader, optimizer, scheduler, device, epoch, log_wandb=True):
-    """Train for one epoch with comprehensive logging."""
+    """Train for one epoch with unified forward pass."""
     model.train()
     logs = {}
     step_logs = []
@@ -139,19 +150,15 @@ def train_epoch(model, loss_fn, loader, optimizer, scheduler, device, epoch, log
         imgs = batch['img'].to(device)
         labs = batch['lab'].to(device)
         
-        # Forward pass - get raw logits
-        raw_logits = model(imgs, apply_constraints=False)
+        # UNIFIED forward pass - get both raw logits and constrained probabilities
+        raw_logits, constrained_probs = model(imgs)
         
-        # Calculate constraint violations on RAW probabilities (before projection)
+        # Calculate constraint violations on constrained probabilities
         with torch.no_grad():
-            raw_probs = torch.sigmoid(raw_logits)
-            constraint_stats = model.constraint_projection.constraint_violations(raw_probs) if model.constraint_projection else {}
+            constraint_stats = model.constraint_projection.constraint_violations(constrained_probs)
         
-        # Get constrained predictions (apply projection)
-        constrained_probs = model.project(raw_logits)
-        
-        # Compute loss using pre-projection constraint stats
-        losses = loss_fn(constrained_probs, raw_logits, labs, constraint_stats)
+        # Compute loss with proper argument order
+        losses = loss_fn(raw_logits, constrained_probs, labs, constraint_stats)
         
         # Backward pass
         optimizer.zero_grad()
@@ -164,12 +171,12 @@ def train_epoch(model, loss_fn, loader, optimizer, scheduler, device, epoch, log
         if scheduler:
             scheduler.step()
         
-        # Log metrics
+        # Log metrics (handle different loss key names)
         step_metrics = {
-            'train/loss': losses['loss'].item(),
-            'train/loss_primary': losses['primary'].item(),
-            'train/loss_constraint': losses['constraint_penalty'].item(),
-            'train/loss_consistency': losses['consistency'].item(),
+            'train/loss': losses.get('loss', losses.get('total', 0)).item(),
+            'train/loss_primary': losses.get('primary', 0).item() if torch.is_tensor(losses.get('primary', 0)) else losses.get('primary', 0),
+            'train/loss_constraint': losses.get('constraint_penalty', losses.get('constraint', 0)).item() if torch.is_tensor(losses.get('constraint_penalty', losses.get('constraint', 0))) else losses.get('constraint_penalty', losses.get('constraint', 0)),
+            'train/loss_consistency': losses.get('consistency', 0).item() if torch.is_tensor(losses.get('consistency', 0)) else losses.get('consistency', 0),
             'train/grad_norm': grad_norm.item(),
             'train/lr': optimizer.param_groups[0]['lr'],
         }
@@ -192,9 +199,12 @@ def train_epoch(model, loss_fn, loader, optimizer, scheduler, device, epoch, log
             wandb.log(step_metrics, step=epoch * len(loader) + batch_idx)
         
         # Update progress bar
+        total_loss = losses.get('loss', losses.get('total', 0))
+        constraint_loss = losses.get('constraint_penalty', losses.get('constraint', 0))
+        
         pbar.set_postfix({
-            'loss': f"{losses['loss'].item():.4f}",
-            'constraint': f"{losses['constraint_penalty'].item():.4f}",
+            'loss': f"{total_loss.item():.4f}" if torch.is_tensor(total_loss) else f"{total_loss:.4f}",
+            'constraint': f"{constraint_loss.item():.4f}" if torch.is_tensor(constraint_loss) else f"{constraint_loss:.4f}",
             'lr': f"{optimizer.param_groups[0]['lr']:.2e}"
         })
         
@@ -210,7 +220,7 @@ def train_epoch(model, loss_fn, loader, optimizer, scheduler, device, epoch, log
 
 @torch.no_grad()
 def evaluate(model, loader, device, pathologies, epoch, split='val', log_wandb=True):
-    """Evaluate model on validation/test set."""
+    """Evaluate model on validation/test set with unified forward pass."""
     model.eval()
     
     all_preds = []
@@ -222,8 +232,8 @@ def evaluate(model, loader, device, pathologies, epoch, split='val', log_wandb=T
         imgs = batch['img'].to(device)
         labs = batch['lab'].to(device)
         
-        # Get predictions
-        constrained_probs = model(imgs)  # Uses integrated mode
+        # Get predictions using unified forward pass
+        raw_logits, constrained_probs = model(imgs)
         
         # Get constraint violations
         if model.constraint_projection:
