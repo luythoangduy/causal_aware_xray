@@ -20,20 +20,94 @@ from src.evaluation.metrics import compute_all_metrics
 
 
 MEDICAL_CONSTRAINTS = {
+    # Hierarchical implications - based on anatomical/physiological relationships
     'implications': [
-        ('Pneumonia', 'Infiltration', 0.0),
-        ('Mass', 'Nodule', 0.0),
-        ('Consolidation', 'Infiltration', 0.0),
-        ('Pneumonia', 'Effusion', -0.2),
-        ('Cardiomegaly', 'Edema', -0.1),
+        # Pneumonia pathway - specific to general
+        ('Pneumonia', 'Lung Opacity', 0.0),           # Pneumonia is a type of lung opacity
+        ('Pneumonia', 'Consolidation', -0.1),         # Pneumonia often causes consolidation 
+        ('Consolidation', 'Lung Opacity', 0.0),       # Consolidation is lung opacity
+        
+        # Lung pathology hierarchy
+        ('Consolidation', 'Infiltration', 0.0),       # Consolidation implies infiltration
+        ('Mass', 'Nodule', 0.0),                      # Mass is large nodule
+        ('Atelectasis', 'Lung Opacity', 0.0),         # Atelectasis causes opacity
+        ('Lesion', 'Lung Opacity', 0.1),              # Lesions generally cause opacity
+        
+        # Cardiac-related implications
+        ('Cardiomegaly', 'Enlarged Cardiom.', 0.0),   # Direct relationship
+        ('Enlarged Cardiom.', 'Edema', -0.1),         # Cardiac enlargement can cause edema
+        ('Cardiomegaly', 'Edema', -0.2),              # Less direct but common association
+        
+        # Pleural pathology
+        ('Pleural Effusion', 'Pleural Other', 0.0),   # Effusion is pleural abnormality
+        ('Pneumothorax', 'Pleural Other', 0.05),      # Pneumothorax affects pleura
+        
+        # Support devices implications
+        ('Support Devices', 'No Finding', -0.11),     # If devices present, less likely "no finding"
+        
+        # Fracture implications
+        ('Fracture', 'Support Devices', 0.05),        # Fractures may need support
     ],
+    
+    # Medical exclusions - mutually incompatible conditions
     'exclusions': [
-        ('Pneumothorax', 'Effusion', 1.2),
-        ('Emphysema', 'Fibrosis', 1.1),
-        ('Atelectasis', 'Emphysema', 1.0),
-        ('Hernia', 'Pneumothorax', 1.0),
+        # Primary exclusions - anatomically/physiologically incompatible
+        ('Pneumothorax', 'Pleural Effusion', 1.4),    # Cannot have both simultaneously
+        ('Emphysema', 'Fibrosis', 1.2),               # Different pathophysiology
+        ('Pneumothorax', 'Consolidation', 1.1),       # Mechanically incompatible
+        
+        # Moderate exclusions - rarely co-occur
+        ('Atelectasis', 'Emphysema', 1.0),            # Opposite lung mechanics
+        ('Hernia', 'Pneumothorax', 1.0),              # Different anatomical regions
+        ('Edema', 'Pneumothorax', 0.9),               # Fluid vs air pathology
+        
+        # Mild exclusions - can co-occur but unusual
+        ('Mass', 'Pneumonia', 0.8),                   # Different etiologies
+        ('Nodule', 'Edema', 0.7),                     # Different pathophysiology
+        ('Fibrosis', 'Consolidation', 0.7),           # Chronic vs acute
+        
+        # No Finding exclusions
+        ('No Finding', 'Pneumonia', 0.11),            # Cannot be both normal and abnormal
+        ('No Finding', 'Consolidation', 0.11),
+        ('No Finding', 'Atelectasis', 0.11),
+        ('No Finding', 'Cardiomegaly', 0.11),
+        ('No Finding', 'Pleural Effusion', 0.11),
+        ('No Finding', 'Mass', 0.11),
+        ('No Finding', 'Nodule', 0.11),
+        ('No Finding', 'Pneumothorax', 0.11),
+        ('No Finding', 'Infiltration', 0.11),
+        ('No Finding', 'Edema', 0.11),
+        ('No Finding', 'Emphysema', 0.11),
+        ('No Finding', 'Fibrosis', 0.11),
+        ('No Finding', 'Pleural Thickening', 0.11),
+        ('No Finding', 'Hernia', 0.11),
     ],
+    
+    # Hierarchical structure mapping for reference
+    'hierarchy': {
+        'root': ['Model'],
+        'Model': [
+            'No Finding', 'Enlarged Cardiom.', 'Cardiomegaly', 
+            'Support Devices', 'Lung Opacity', 'Pleural Other', 
+            'Pleural Effusion', 'Pneumothorax', 'Fracture', 'Edema'
+        ],
+        'Lung Opacity': ['Consolidation', 'Pneumonia', 'Atelectasis', 'Lesion'],
+        'Lesion': [],
+        'Consolidation': [],
+        'Pneumonia': [],
+        'Atelectasis': [],
+        'Pleural Other': [],
+        'Pleural Effusion': [],
+        'Pneumothorax': [],
+        'Enlarged Cardiom.': [],
+        'Cardiomegaly': [],
+        'Support Devices': [],
+        'Fracture': [],
+        'Edema': [],
+        'No Finding': []
+    },
 }
+
 
 
 def setup_wandb(cfg, args):
