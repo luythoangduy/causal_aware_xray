@@ -138,12 +138,12 @@ class ConstrainedChestXRayClassifier(ConstrainedModel):
         """Backward compatibility forward method"""
         raw_logits, constrained_probs = super().forward(x)
         
-        # Maintain backward compatibility with mode switching
+        # If called without explicit mode parameter, return both values (new unified interface)
         if apply_constraints is None:
-            mode = self.projection_mode
-        else:
-            mode = 'integrated' if apply_constraints else 'post_process'
+            return raw_logits, constrained_probs
         
+        # Explicit mode specified - return single value for backward compatibility
+        mode = 'integrated' if apply_constraints else 'post_process'
         if mode == 'integrated':
             return constrained_probs
         else:
